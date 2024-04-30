@@ -6,18 +6,12 @@ exports.register = async (req, res) => {
     let { name, email, password } = req.body;
 
     try {
-        bcrypt.hash(password, 10).then(async (hash) => {
-            await user.create({ name, email, password: hash })
-                .then((response) => {
-                    res.send({ status: 1, msg: "User registered successfully", data: { "_id": response._id } });
-                })
-                .catch((err) => {
-                    console.log("error: ", err);
-                    res.send({ status: 0, msg: err, data: {} });
-                });
-        });
+        let hashedPassword = await bcrypt.hash(password, 10);
+        let userData = new user({ name, email, password: hashedPassword });
+        await userData.save();
+        res.json({ status: 1, msg: "User registered successfully", data: { "_id": userData._id } });
     } catch (err) {
-        res.send({ status: 0, msg: err, data: {} });
+        res.json({ status: 0, msg: err.errorResponse.errmsg, data: {} });
     }
 };
 
@@ -26,15 +20,20 @@ exports.login = async (req, res, next) => {
     try {
         const userData = await user.findOne({ email });
         if (userData) {
-            bcrypt.compare(password, userData.password).then(function (result) {
-                result
-                    ? res.send({ status: 1, msg: "User logged in successfully", data: { "_id": userData._id } })
-                    : res.send({ status: 0, msg: "User not found", data: {} });
-            });
+            let passwordMatch = await bcrypt.compare(password, userData.password);
+            if (!passwordMatch) {
+                return res.json({ status: 0, msg: "Invalid credentials", data: {} });
+            }
+            let token = jwt.sign({ userId: userData._id }, process.env.tokenSecret, { expiresIn: "1h" });
+            res.json({ status: 1, msg: "User logged in successfully", data: { "token": token } });
         } else {
-            res.send({ status: 0, msg: "User not found", data: {} });
+            res.json({ status: 0, msg: "Invalid credentials", data: {} });
         }
     } catch (err) {
-        res.send({ status: 0, msg: err, data: {} });
+        res.json({ status: 0, msg: err, data: {} });
     }
+};
+
+exports.checkAuth = async (req, res) => {
+    res.json({ status: 1, msg: "User authenticated", data: {} });
 };
